@@ -1,0 +1,113 @@
+`include "constants.vams"
+`include "disciplines.vams"
+
+module OTA_model(inp, inn, outp, outn);
+    input inp;
+    input inn;
+    output outp;
+    output outn;
+    electrical inp, inn, outp, outn;
+
+    // Parameters
+    parameter real gain = 100;
+    parameter real GBW = 100e6; // 100 MHz
+    parameter real vdd = 1.2;
+    parameter real vcc = 0;
+    parameter real SR = 20e6; // 20 V/s
+    parameter real Vos = 0;
+    parameter real Rin = 1e9; // 1 GOhm
+    parameter real CL = 1e-12; // 1 pF
+
+    // Internal variables
+    voltage Vin_eff;
+    Current I_OUT;
+    real Gm, Rout, Cout;
+    real Imax;
+
+    analog begin
+        // Initialize parameters
+        @(initial_step) begin
+            Cout = CL;
+            Gm = 2 * `M_PI * GBW * Cout;
+            Rout = gain / Gm;
+            Imax = SR * CL;
+        end
+
+        // Input
+        Vin_eff <+ V(inp,inn) + Vos;
+        I(inp,inn) <+ Vin_eff / Rin;
+
+        // Output
+        I_OUT = <+  Gm * Vin_eff + Cout * ddt(V(outp, outn));
+
+        if (I_OUT > Imax) I(outp,outn) <+ Imax;
+        else I(outp,outn) <+  Gm * Vin_eff + Cout * ddt(V(outp, outn));
+
+        // Slew rate
+
+        // Clipping
+        if (V(outp,outn) > vdd) begin
+            V(outp,outn) <+ vdd;
+        end else if (V(outp,outn) < vcc) begin
+            V(outp,outn) <+ vcc;
+        end
+    end
+endmodule
+`include "constants.vams"
+`include "disciplines.vams"
+
+module OTA_model(inp, inn, out);
+    input inp;
+    input inn;
+    output out;
+    electrical inp, inn, out;
+
+    // Parameters
+    parameter real gain = 100;
+    parameter real GBW = 100e6; // 100 MHz
+    parameter real vdd = 1.2;
+    parameter real vcc = 0;
+    parameter real SR = 20e6; // 20 V/s
+    parameter real Vos = 0;
+    parameter real Rin = 1e9; // 1 GOhm
+    parameter real CL = 1e-12; // 1 pF
+
+    // Internal variables
+    real Vin_eff;
+    real I_OUT;
+    real Gm, Rout, Cout;
+    real Imax;
+	electrical node1; 
+
+    analog begin
+        // Initialize parameters
+        @(initial_step) begin
+            Cout = CL;
+            Gm = 2 * `M_PI * GBW * Cout;
+            Rout = gain / Gm;
+            Imax = SR * CL;
+            Vin_eff = 0;
+            I_OUT = 0;
+        end
+
+        // Input
+        Vin_eff = Vos + V(inp,inn);
+        I(inp,inn) <+ Vin_eff / Rin;
+
+        // Output
+		V(node1) <+ Cout * ddt(V(out));
+        I_OUT = Gm * Vin_eff + V(node1);
+
+        if (I_OUT > Imax) I(out) <+ Imax;
+        else I(out) <+  I_OUT;
+
+        // Slew rate
+
+        // Clipping
+        if (V(out) > vdd) begin
+            V(out) <+ vdd;
+        end else if (V(out) < vcc) begin
+            V(out) <+ vcc;
+        end
+    end
+endmodule

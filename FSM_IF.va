@@ -1,0 +1,148 @@
+`include "constants.h"
+`include "discipline.h"
+module FSM_IN(Q, OLD_Q, HH, CLK, D, R, S);
+output Q;
+electrical Q;
+output OLD_Q;
+electrical OLD_Q;
+output HH;
+electrical HH;
+input CLK;
+electrical CLK;
+input D;
+electrical D;
+input R;
+electrical R;
+input S;
+electrical S;
+// INSTANCE PARAMETERS: 
+ parameter real vhi = 3;                            // voltage [v] for logic high
+ parameter real vlo = 0 from (-inf:vhi) ;           // voltage [v] for logic low
+ parameter real vthresh = 0.5*(vhi+vlo) ;           // switch voltage [v]
+ parameter real tcplhq = 1n from (0: 1m] ;          // prop delay from clock to Q, low to high
+ parameter real tcphlq = 1n from (0: 1m] ;          // prop delay from clock to Q, high to low 
+ parameter real tcplhq_ = 1n from (0: 1m] ;         // prop delay from clock to OLD_Q, low to high
+ parameter real tcphlq_ = 1n from (0: 1m] ;         // prop delay from clock to OLD_Q, high to low 
+ parameter real tspq = 1n from (0: 1m] ;            // prop delay from set to Q and OLD_Q
+ parameter real trpq = 1n from (0: 1m] ;            // prop delay from reset to Q and OLD_Q
+ parameter real tr = tcplhq from (0:2*tcplhq];      // rise time [s] for output
+ parameter real tf = tcphlq from (0:2*tcplhq];      // fall time [s] for output
+ parameter integer initval = -1 from [-1:1] ;       // initial value for Q (X,0,1)
+ 
+// LOCAL VARIABLES:
+ real tdelq; 
+ real tdelq_;
+ integer sr_flag;
+ integer clk_flag;
+ integer s;
+ integer r;
+ integer d;
+ integer qnow;
+ integer q_now;
+ integer hh_flag_now;
+ integer q;
+ integer q_;
+ integer hh_flag;
+
+ analog function real tdelay;
+    input outnow, out, tplh, tphl, trise, tfall;
+    real tplh, tphl, trise, tfall;
+    integer outnow, out;
+    case (1)
+    (outnow > out)  : begin // high to low on Q 
+        tdelay = tphl - tf/2.0 ; 
+        if (tdelay < 0.05*tf) tdelay = 0; // delay too small, neglect.
+        end 
+    (outnow < out)  : begin // low to high on Q
+        tdelay = tplh - tr/2.0 ;
+        if (tdelay < 0.05*tr) tdelay = 0; // delay too small, neglect.
+        end
+    (outnow == out) : if (tdelay < 0.05*tr) tdelay = 0; // no change
+    endcase
+ endfunction
+ 
+ analog begin
+    @ (initial_step) begin
+        if (vthresh > vhi || vthresh < vlo) begin
+        $display
+        ("%M: Inconsistent input threshold specification w/logic family.\n");
+        end
+        case (initval)
+        1  : begin q = 1; q_ = 0; hh_flag = 0; end
+        0  : begin q = 0; q_ = 1; hh_flag = 0; end
+        default begin q = 0; q_ = 0; hh_flag = 0; end
+        endcase
+        sr_flag = 1;
+        clk_flag = 0;
+    end 
+
+    @ (cross(V(S) - vthresh, 0) ) sr_flag = 1;
+    @ (cross(V(R) - vthresh, 0) ) sr_flag = 1;
+    @ (cross(V(CLK) - vthresh, +1) ) clk_flag = 1;
+
+    if (sr_flag) begin
+        sr_flag = 0;
+        s = V(S) > vthresh;
+        r = V(R) > vthresh;
+        d = V(D) > vthresh;
+        qnow = q;
+        q_now = q_;
+        hh_flag_now = hh_flag;
+        if ( (s==1) && (r==1) ) begin 
+            q = 1; 
+            q_ = 1;
+            tdelq = tdelay(qnow, q, tspq, tspq, tr, tf);
+            tdelq_ = tdelay(q_now, q_, trpq, trpq, tr, tf);
+            // assume R/S to Q/OLD_Q delay time for "high to low" and 
+            // "low to high" are the same.
+        end
+        if ( (s==1) && (r==0) ) begin 
+            q = 1; 
+            q_ = 1; 
+            tdelq = tdelay(qnow, q, tspq, tspq, tr, tf);
+            tdelq_ = tdelay(q_now, q_, trpq, trpq, tr, tf);
+        end
+        if ( (s==0) && (r==1) ) begin 
+            q = 0; 
+            q_ = 0; 
+            tdelq = tdelay(qnow, q, tspq, tspq, tr, tf);
+            tdelq_ = tdelay(q_now, q_, trpq, trpq, tr, tf);
+        end 
+    end
+    if (clk_flag) begin
+        clk_flag = 0;
+        s = V(S) > vthresh;
+        r = V(R) > vthresh;
+        d = V(D) > vthresh;
+        qnow = q;
+        q_now = q_;
+        hh_flag_now = hh_flag;
+        if ( (s==0) && (r==0) ) begin 
+            if (d) begin 
+                q = 1; 
+                q_ = qnow;
+                tdelq = tdelay(qnow, q, tcplhq, tcphlq, tr, tf);
+                tdelq_ = tdelay(q_now, q_, tcplhq_, tcphlq_, tr, tf);
+            end
+            if (!d) begin 
+                q = 0; 
+                q_ = qnow;
+                tdelq = tdelay(qnow, q, tcplhq, tcphlq, tr, tf);
+                tdelq_ = tdelay(q_now, q_, tcplhq_, tcphlq_, tr, tf);
+            end
+        end
+        if ( q && q_ ) begin 
+            hh_flag = 1; 
+            tdelq = tdelay(hh_flag_now, hh_flag, tcplhq, tcphlq, tr, tf);
+            end
+        if (!( q && q_ )) begin 
+            hh_flag = 0; 
+            tdelq = tdelay(hh_flag_now, hh_flag, tcplhq, tcphlq, tr, tf);
+            end
+    end
+
+    V(Q) <+ transition( q ? vhi : vlo, tdelq, tr, tf);
+    V(OLD_Q)<+ transition( q_? vhi : vlo, tdelq_, tr, tf);
+    V(HH)<+ transition( hh_flag? vhi : vlo, tdelq_, tr, tf);
+ end
+endmodule

@@ -1,0 +1,69 @@
+// VerilogA for digitally controlled oscillator
+`include "constants.vams"
+`include "disciplines.vams"
+`define NUM_DAC_BITS   10
+// module VCO_Veriloga(VC, OUT, AVDD, AVSS);
+module VCO_Veriloga(din, OUT, OUT_);
+
+	input [`NUM_DAC_BITS-1:0] din;
+	electrical [`NUM_DAC_BITS-1:0] din;
+
+	output OUT;
+	electrical OUT;
+
+	output OUT_;
+	electrical OUT_;
+
+	parameter real VDD = 3;
+    parameter real VCC = 0;
+	parameter real Vth = 0.5*(VDD+VCC);
+	parameter real Vmin = 0;
+	parameter real Vmax = 3 from (Vmin:VDD*1.1);
+	parameter real Fmin = 78M from (0:inf);
+	parameter real Fmax = 82M from (Fmin:inf);
+	parameter real trise = 10p, tfall=10p, td=0;
+
+    real    lsb, new_vout;
+    integer decimal_value;
+    integer VOUT_i;
+
+	real phase, freq, sine;
+
+	genvar i;
+
+	analog begin
+		// compute the input voltage from the digital word
+
+      @(initial_step or initial_step("dc","ac","tran","xf"))  begin
+        decimal_value = 0;
+        lsb  = (Vmax - Vmin) / (1 << `NUM_DAC_BITS) ;	
+      end
+
+		for (i = 0; i < `NUM_DAC_BITS; i = i + 1) begin
+        @(cross(V(din[i]) - Vth, 0));
+         	decimal_value = decimal_value + (( V(din[i]) > Vth ) ? 1 << i : 0 );
+			new_vout = decimal_value * lsb;
+		end
+		decimal_value=0;
+	
+		// compute the freq from the control voltage
+		freq = ((new_vout - Vmin)*(Fmax - Fmin) / (Vmax - Vmin)) + Fmin;
+		// bound the frequency
+		if (freq > Fmax) freq = Fmax;
+		if (freq < Fmin) freq = Fmin;
+		// calculate the phase (modulo 2*pi)
+		phase= 2* 3.141592654* idtmod(freq, 0, 1, -0.5);
+		// generate the output
+		sine = sin(phase);
+		@(cross(sine,0));
+		if (sine > 0)	VOUT_i= 1;
+		else 			VOUT_i= 0;
+		V(OUT) <+ transition(VOUT_i*VDD, td, trise, tfall);
+        V(OUT_) <+ transition((!VOUT_i)*VDD, td, trise, tfall);
+		// bound the time step
+		$bound_step(0.1/freq);
+	end
+
+	endmodule
+
+`undef NUM_DAC_BITS

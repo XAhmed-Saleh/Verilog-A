@@ -1,0 +1,90 @@
+// VerilogA fo FSM_LOGIC
+`include "constants.vams"
+`include "disciplines.vams"
+`define SIZE 10
+module FSM_LOGIC (out, D, OLD_D, HH, CLK, dv, step);
+	input D;
+	electrical D;
+	input OLD_D;
+	electrical OLD_D;
+	input HH;
+	electrical HH;
+	input CLK;
+	electrical CLK;
+	output [`SIZE-1 :0] out;
+	electrical [`SIZE-1 :0] out;
+	output dv;
+	electrical dv;
+	output step;
+	electrical step;
+	// INSTANCE PARAMETERS: 
+	parameter real vhi = 3;                     // voltage [v] for logic high
+	parameter real vlo = 0 from (-inf:vhi);     // voltage [v] for logic low
+	parameter real vthresh = 0.5*(vhi+vlo);		// switch voltage [v]
+	parameter real tr = 1p;      				// rise time [s] for output
+	parameter real tf = 1p;      				// fall time [s] for output
+	parameter real td = 1p;		      			// prop delay [s] for output
+	parameter integer initval = 0;		       	// initial value for Q (X,0,1)
+
+	// LOCAL VARIABLES:
+	integer current_c;
+	integer old_c;
+	integer change_flag;
+	integer hh_flag;
+	integer max_decimal_value;
+	integer decimal_step;
+	integer decimal_value;
+	integer counter;
+    integer T_COUNT;
+	integer state;
+
+	genvar i;
+
+	analog begin
+		@(initial_step)  begin
+			decimal_value = 0;
+			change_flag = 0;
+			hh_flag = 0;
+			counter = 0;
+            T_COUNT = 0;
+			state = 0;
+			max_decimal_value = 2**`SIZE;
+			decimal_step = max_decimal_value/2;
+		end
+
+		@ (cross(V(D) - vthresh, +1) ) begin change_flag = 1; T_COUNT = T_COUNT + 1; end
+		@ (cross(V(HH) - vthresh, +1) ) begin hh_flag = 1; T_COUNT = T_COUNT + 1; end
+		@ (cross(V(CLK) - vthresh, +1) ) counter = counter + 1;
+
+		if ((hh_flag) &&  (T_COUNT > 1)) begin
+			hh_flag = 0;
+			if (state == 0) begin // 0 => down (smaller than then target)
+				decimal_value = decimal_value - 2 * decimal_step;
+			end
+			if (state == 1) begin // 1 => up (higher than then target)
+				decimal_value = decimal_value + 2 * decimal_step;
+			end
+		end
+		if ((change_flag) &&  (T_COUNT > 1)) begin
+			change_flag = 0;
+			state = !state;
+			if (state == 0) begin // 0 => down (smaller than then target)
+				decimal_value = decimal_value - decimal_step;
+			end
+			if (state == 1) begin // 1 => up (higher than then target)
+				decimal_value = decimal_value + decimal_step;
+			end
+			decimal_step = decimal_step/2;
+		end
+        if (decimal_value >= max_decimal_value) decimal_value = max_decimal_value - 1;
+
+        for (i=0; i<`SIZE; i=i+1)   begin
+            V(out[i]) <+ transition(decimal_value & (1<<i) ? vhi : vlo, td, tr, tf);
+        end
+        V(dv) <+ transition(decimal_value, td, tr, tf);
+		V(step) <+ transition(decimal_step, td, tr, tf);
+	end
+endmodule
+
+`undef NUM_ADC_BITS
+
