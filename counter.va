@@ -1,0 +1,40 @@
+// VerilogA fo rcounter
+`include "constants.vams"
+`include "disciplines.vams"
+`define SIZE 3
+module counter (out, clk);
+	inout clk;
+	electrical clk;
+
+	output [`SIZE-1 :0] out;
+	electrical [`SIZE-1 :0] out;
+
+	integer decimal_value;
+	parameter real VDD = 1.2;
+	parameter real Vth=0.6 from (0:VDD);
+	parameter real Vlow=0;
+	parameter real Vhigh=1 from (Vlow:VDD*1.1);
+	parameter real trise=10p, tfall=10p, td=0;
+
+	genvar i;
+
+	analog begin
+
+		@(initial_step or initial_step("dc","ac","tran","xf"))  begin
+			decimal_value = 0;
+		end
+		@(cross(V(clk) - Vth, 1)) begin
+			decimal_value = decimal_value + 1;
+		    // bound the frequency
+            if (decimal_value + 1> 2**`SIZE) decimal_value = 0;
+		end
+
+        for (i=0; i<`SIZE; i=i+1)   begin
+            V(out[i]) <+ transition(decimal_value & (1<<i) ? Vhigh : 0, td, trise, tfall);
+        end
+	end
+endmodule
+
+
+
+`undef NUM_ADC_BITS

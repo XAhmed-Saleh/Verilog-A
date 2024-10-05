@@ -1,0 +1,56 @@
+// VerilogA fo rcounter
+`include "constants.vams"
+`include "disciplines.vams"
+
+module counter (in, sh, reset, clk, out);
+	input in;
+	electrical in;
+
+	input clk;
+	electrical clk;
+
+	input sh;
+	electrical sh;
+
+	input reset;
+	electrical reset;
+
+	output out;
+	electrical out;
+
+	parameter real VDD = 1.2;
+	parameter real Vth=0.6 from (0:VDD);
+	parameter real Diode_Vth=0.6 from (0:VDD);
+
+	integer counter;
+	real sum;
+
+	analog begin
+
+		@(initial_step or initial_step("dc","ac","tran","xf"))  begin
+			counter = 0;
+			sum = 0;
+		end
+
+		@(cross(V(reset) - Vth, 1)) begin
+			counter = 0;
+			sum = 0;
+		end
+
+		@(cross(V(clk) - Vth, 1)) begin
+			if (V(reset) > Vth)	begin
+				counter = 0;
+				sum = 0;
+			end else if (V(sh) > Vth) begin
+					if  (V(in, out) > Diode_Vth) begin
+						counter = counter + 1;
+						sum = sum + V(in) - Diode_Vth;
+					end
+			end
+		end
+
+		if (counter >0)	V(out) <+ sum / counter - Diode_Vth;
+		else			V(out) <+ 0;
+
+	end
+endmodule
